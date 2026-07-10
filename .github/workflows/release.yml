@@ -1,0 +1,70 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Extract version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Create zip
+        run: |
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          zip -r "SverigesRadio-${VERSION}.zip" SverigesRadio/
+          echo "ZIP=SverigesRadio-${VERSION}.zip" >> "$GITHUB_ENV"
+
+      - name: Compute SHA1
+        run: |
+          SHA=$(sha1sum "$ZIP" | awk '{print $1}')
+          echo "SHA=$SHA" >> "$GITHUB_ENV"
+
+      - name: Update repository.xml
+        run: |
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          REPO="https://github.com/${{ github.repository }}"
+          sed -i \
+            -e "s|<version>.*</version>|<version>${VERSION}</version>|" \
+            -e "s|<url>.*</url>|<url>${REPO}/releases/download/v${VERSION}/SverigesRadio-${VERSION}.zip</url>|" \
+            -e "s|<sha>.*</sha>|<sha>${SHA}</sha>|" \
+            repository.xml
+
+      - name: Commit updated repository.xml
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add repository.xml
+          git commit -m "Release v${{ steps.version.outputs.VERSION }}: update repository.xml"
+          git push origin HEAD:${{ github.event.repository.default_branch }}
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: "Sveriges Radio ${{ github.ref_name }}"
+          body: |
+            ## Sveriges Radio LMS Plugin ${{ github.ref_name }}
+
+            ### Installation
+            In LMS → Server Settings → Plugins → "Add Repository", paste:
+            ```
+            https://raw.githubusercontent.com/${{ github.repository }}/main/repository.xml
+            ```
+            Then find **Sveriges Radio** in the plugin list and click Install.
+
+            ### Manual install
+            Download `SverigesRadio-${{ steps.version.outputs.VERSION }}.zip` below,
+            unzip into your LMS plugins directory, and restart.
+          files: ${{ env.ZIP }}
