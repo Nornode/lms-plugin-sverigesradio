@@ -1,0 +1,81 @@
+# String file for SverigesRadio plugin
+
+PLUGIN_SR_NAME
+	EN	Sveriges Radio
+	SV	Sveriges Radio
+
+PLUGIN_SR_DESC
+	EN	Live radio and on-demand programmes from Sveriges Radio
+	SV	Direktradio och on-demand-program från Sveriges Radio
+
+PLUGIN_SR_SETTINGS
+	EN	Sveriges Radio Settings
+	SV	Inställningar för Sveriges Radio
+
+PLUGIN_SR_QUALITY
+	EN	Audio Quality
+	SV	Ljudkvalitet
+
+PLUGIN_SR_QUALITY_HI
+	EN	High quality
+	SV	Hög kvalitet
+
+PLUGIN_SR_QUALITY_LO
+	EN	Standard quality
+	SV	Standardkvalitet
+
+PLUGIN_SR_CHANNELS_FILTER
+	EN	Channel Filter
+	SV	Kanalfilter
+
+PLUGIN_SR_CHANNELS_ALL
+	EN	All channels (national + local)
+	SV	Alla kanaler (rikskanaler + lokalradio)
+
+PLUGIN_SR_CHANNELS_NAT
+	EN	National channels only
+	SV	Endast rikskanaler
+
+PLUGIN_SR_LIVE
+	EN	Live Radio
+	SV	Direktradio
+
+PLUGIN_SR_ONDEMAND
+	EN	On Demand / Podcasts
+	SV	On Demand / Poddradio
+
+PLUGIN_SR_SEARCH
+	EN	Search Episodes
+	SV	Sök avsnitt
+
+PLUGIN_SR_NATIONAL
+	EN	National Channels
+	SV	Rikskanaler
+
+PLUGIN_SR_LOCAL
+	EN	Local Channels
+	SV	Lokalradio
+
+PLUGIN_SR_CATEGORIES
+	EN	Browse by Category
+	SV	Bläddra efter kategori
+
+PLUGIN_SR_ALL_PROGRAMS
+	EN	All Programmes
+	SV	Alla program
+
+PLUGIN_SR_EPISODES
+	EN	Episodes
+	SV	Avsnitt
+
+PLUGIN_SR_NOW_PLAYING
+	EN	Now playing
+	SV	Spelas nu
+
+PLUGIN_SR_NO_RESULTS
+	EN	No results found
+	SV	Inga resultat hittades
+
+PLUGIN_SR_ERROR
+	EN	Could not reach Sveriges Radio — please check your network connection
+	SV	Kunde inte nå Sveriges Radio — kontrollera din nätverksanslutning

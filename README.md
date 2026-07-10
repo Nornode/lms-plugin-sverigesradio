@@ -1,0 +1,94 @@
+# Sveriges Radio — LMS Plugin
+
+A [Lyrion Music Server](https://lyrion.org) plugin for [Sveriges Radio](https://sverigesradio.se) — Sweden's public broadcaster.
+
+## Features
+
+- **52 live channels** — P1, P2, P3, P4, and all local stations
+- **On-demand browsing** — browse episodes by genre category or all programmes
+- **Episode search** — full-text search across the SR archive
+- **Now-playing metadata** — live channels show the current programme title on the player display
+- **Baby / Squeezebox Radio compatible** — MP3 streams, two-line display, no seeking on live channels
+- **Audio quality setting** — high (192 kbps) or standard (96 kbps)
+- **Channel filter** — show all channels or national channels only
+
+## Requirements
+
+- Lyrion Music Server 8.0 or later
+- No account or API key required — Sveriges Radio's API is public
+
+## Installation
+
+### Via Plugin Repository (recommended)
+
+1. Open LMS → **Server Settings** → **Plugins** → scroll to the bottom
+2. In "Additional Repositories" paste:
+   ```
+   https://raw.githubusercontent.com/GITHUB_USERNAME/lms-plugin-sverigesradio/main/repository.xml
+   ```
+3. Click **Apply**, then find **Sveriges Radio** in the plugin list and click **Install**
+4. Restart LMS when prompted
+
+### Manual install
+
+1. Download the latest `SverigesRadio-x.x.zip` from the [Releases](../../releases) page
+2. Unzip into your LMS plugins directory (e.g. `/path/to/lms/Plugins/`)
+3. Restart LMS
+
+## Usage
+
+After enabling the plugin, navigate to **Radio** on your player. You will find **Sveriges Radio** in the list.
+
+| Section | Description |
+|---------|-------------|
+| Live Radio | All live channels grouped by national / local |
+| On Demand | Browse by genre, or see all programmes |
+| Search Episodes | Full-text search across the SR archive |
+
+## Settings
+
+In LMS → **Server Settings** → **Plugins** → **Sveriges Radio**:
+
+| Setting | Options |
+|---------|---------|
+| Audio Quality | High (192 kbps) / Standard (96 kbps) |
+| Channels | All channels / National channels only |
+
+## Development
+
+### Prerequisites
+
+- LMS running as the [pssc/ha-addon-lms](https://github.com/pssc/ha-addon-lms) add-on inside Home Assistant OS, or any standard LMS install
+
+### Deploy to HAOS
+
+Edit `Makefile` to set your host and add-on slug, then:
+
+```sh
+make deploy-restart   # rsync plugin + restart LMS
+make logs             # tail server.log
+```
+
+### Release
+
+Push a version tag to trigger the automated release workflow:
+
+```sh
+git tag v1.1
+git push origin v1.1
+```
+
+The workflow will:
+1. Zip `SverigesRadio/`
+2. Compute SHA1
+3. Update `repository.xml` with the new URL and SHA
+4. Create a GitHub Release with the zip attached
+
+## License
+
+GPLv2 — see [LICENSE](LICENSE)
+
+## Credits
+
+- Sveriges Radio for providing a free, open API
+- Lyrion Music Server community for the plugin framework
