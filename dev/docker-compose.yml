@@ -1,0 +1,19 @@
+services:
+  lms:
+    image: lmscommunity/lyrionmusicserver:latest
+    container_name: lms-dev
+    ports:
+      - "9000:9000"          # web UI
+      - "9090:9090"          # CLI (telnet)
+      - "3483:3483/tcp"      # slimproto (players)
+      - "3483:3483/udp"      # slimproto discovery
+    volumes:
+      # Live plugin source — edit files on host, they appear in container
+      - ../SverigesRadio:/lms/Plugins/SverigesRadio
+      # Persistent state (prefs, cache, logs) survives restarts
+      - ./state:/config
+      - ./state/music:/music
+      - ./state/playlist:/playlist
+    environment:
+      - TZ=Europe/Stockholm
+    restart: unless-stopped
