@@ -24,7 +24,7 @@ start_container() {
       -p 9090:9090 \
       -p 3483:3483/tcp \
       -p 3483:3483/udp \
-      -v "$PLUGIN_DIR":/config/cache/InstalledPlugins/Plugins/SverigesRadio \
+      -v "$PLUGIN_DIR":/config/cache/Plugins/SverigesRadio \
       -v "$VOLUME":/config \
       -e TZ=Europe/Stockholm \
       "$IMAGE" >/dev/null

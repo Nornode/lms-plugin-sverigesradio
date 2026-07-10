@@ -74,6 +74,7 @@ sub initPlugin {
             feed   => \&topLevelFeed,
             tag    => 'sverigesradio',
             menu   => 'radios',
+            is_app => 1,
             weight => 75,
         );
     };
