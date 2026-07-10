@@ -70,6 +70,10 @@ sub initPlugin {
         [['playlist'], ['newsong', 'pause', 'stop', 'resume']]);
 
     if (main::WEBUI) {
+        Slim::Web::Pages->addRawFunction(
+            'plugins/SverigesRadio/programfeed',
+            \&_webProgramFeed,
+        );
         eval {
             require Plugins::SverigesRadio::Settings;
             Plugins::SverigesRadio::Settings->new();
@@ -263,14 +267,21 @@ sub allProgramsFeed {
 
 sub _programItem {
     my ($prog) = @_;
+    my $port     = preferences('server')->get('httpport') || 9000;
+    my $feed_url = sprintf('http://127.0.0.1:%d/plugins/SverigesRadio/programfeed?id=%d&name=%s',
+        $port, $prog->{id}, URI::Escape::uri_escape_utf8($prog->{name}));
     return {
-        type        => 'link',
-        name        => $prog->{name},
-        line1       => $prog->{name},
-        line2       => ($prog->{channel} && $prog->{channel}{name}) ? $prog->{channel}{name} : '',
-        image       => $prog->{programimage} || '',
-        url         => \&episodesFeed,
-        passthrough => [{ program_id => $prog->{id}, program_name => $prog->{name}, program_image => $prog->{programimage} || '' }],
+        type            => 'link',
+        name            => $prog->{name},
+        line1           => $prog->{name},
+        line2           => ($prog->{channel} && $prog->{channel}{name}) ? $prog->{channel}{name} : '',
+        image           => $prog->{programimage} || '',
+        url             => \&episodesFeed,
+        passthrough     => [{ program_id => $prog->{id}, program_name => $prog->{name}, program_image => $prog->{programimage} || '' }],
+        favorites_url   => $feed_url,
+        favorites_title => $prog->{name},
+        favorites_type  => 'opml',
+        favorites_icon  => $prog->{programimage} || '',
     };
 }
 
@@ -314,15 +325,20 @@ sub _episodeItem {
                     ? $ep->{listenpodfile}{url} : undef;
     my $duration  = ($ep->{listenpodfile} && $ep->{listenpodfile}{duration})
                     ? $ep->{listenpodfile}{duration} : undef;
+    my $title     = $ep->{title} || $program_name;
+    my $image     = $ep->{imageurl} || $program_image;
 
     return {
-        type      => $audio_url ? 'audio' : 'text',
-        name      => $ep->{title}   || $program_name,
-        line1     => $ep->{title}   || $program_name,
-        line2     => $program_name,
-        image     => $ep->{imageurl} || $program_image,
-        url       => $audio_url || '',
-        on_select => 'play',
+        type            => $audio_url ? 'audio' : 'text',
+        name            => $title,
+        line1           => $title,
+        line2           => $program_name,
+        image           => $image,
+        url             => $audio_url || '',
+        on_select       => 'play',
+        favorites_url   => $audio_url || '',
+        favorites_title => $title,
+        favorites_icon  => $image,
         ($duration ? (duration => $duration) : ()),
     };
 }
@@ -410,9 +426,80 @@ sub _pollNowPlaying {
 # Registered with RemoteMetadata for live stream URLs that bypass the custom scheme
 sub _handleLiveMetadata {
     my ($client, $url, $metadata) = @_;
-    # The ProtocolHandler already handles metadata for sverigesradio:// URLs.
-    # This parser is a fallback for direct liveaudio URLs if ever used.
     return 1;
+}
+
+# --------------------------------------------------------------------------
+# HTTP handler: serves a programme's episodes as OPML for LMS Favorites
+# GET /plugins/SverigesRadio/programfeed?id=<program_id>&name=<name>
+# --------------------------------------------------------------------------
+
+sub _webProgramFeed {
+    my ($httpClient, $response) = @_;
+
+    my $query = $response->request->uri->query // '';
+    my %p;
+    for my $pair (split /&/, $query) {
+        my ($k, $v) = split /=/, $pair, 2;
+        next unless defined $k;
+        $p{URI::Escape::uri_unescape($k)} = defined $v ? URI::Escape::uri_unescape($v) : '';
+    }
+
+    my $program_id   = $p{id}   || '';
+    my $program_name = $p{name} || 'Programme';
+
+    unless ($program_id) {
+        $response->code(400);
+        $response->content_type('text/plain');
+        $response->content('id required');
+        $httpClient->send_response($response);
+        Slim::Web::HTTP::closeHTTPSocket($httpClient);
+        return;
+    }
+
+    Plugins::SverigesRadio::API->episodes($program_id, 1, sub {
+        my $result   = shift;
+        my $episodes = $result->{episodes} || [];
+
+        my @outlines;
+        for my $ep (@$episodes) {
+            my $url = ($ep->{listenpodfile} && $ep->{listenpodfile}{url})
+                      ? $ep->{listenpodfile}{url} : '';
+            next unless $url;
+            my $title = _xe($ep->{title} || $program_name);
+            my $image = _xe($ep->{imageurl} || '');
+            push @outlines, qq{    <outline type="audio" text="$title" url="} . _xe($url) . qq{" image="$image"/>};
+        }
+
+        my $body = @outlines
+            ? join("\n", @outlines)
+            : '    <outline type="text" text="No episodes available"/>';
+
+        my $opml = sprintf(<<'OPML', _xe($program_name), $body);
+<?xml version="1.0" encoding="UTF-8"?>
+<opml version="1">
+  <head><title>%s</title></head>
+  <body>
+%s
+  </body>
+</opml>
+OPML
+
+        $response->code(200);
+        $response->content_type('text/xml; charset=utf-8');
+        $response->content($opml);
+        $httpClient->send_response($response);
+        Slim::Web::HTTP::closeHTTPSocket($httpClient);
+    });
+}
+
+sub _xe {
+    my $s = shift // '';
+    $s =~ s/&/&amp;/g;
+    $s =~ s/</&lt;/g;
+    $s =~ s/>/&gt;/g;
+    $s =~ s/"/&quot;/g;
+    return $s;
 }
 
 1;
