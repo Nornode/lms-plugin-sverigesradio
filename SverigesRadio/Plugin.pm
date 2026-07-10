@@ -1,6 +1,9 @@
 package Plugins::SverigesRadio::Plugin;
 
 use strict;
+
+BEGIN { warn "[SverigesRadio] Plugin.pm: BEGIN\n"; }
+
 use base qw(Slim::Plugin::OPMLBased);
 
 use File::Spec::Functions qw(catfile);
@@ -13,6 +16,8 @@ use Slim::Utils::Prefs;
 use Slim::Utils::Strings;
 use Slim::Utils::Timers;
 
+warn "[SverigesRadio] Plugin.pm: modules loaded\n";
+
 our $pluginDir;
 BEGIN {
     $pluginDir = $INC{'Plugins/SverigesRadio/Plugin.pm'};
@@ -21,7 +26,7 @@ BEGIN {
 
 my $log   = Slim::Utils::Log->addLogCategory({
     category     => 'plugin.sverigesradio',
-    defaultLevel => 'ERROR',
+    defaultLevel => 'INFO',
     description  => 'PLUGIN_SR_DESC',
 });
 
@@ -30,17 +35,28 @@ my $prefs = preferences('plugin.sverigesradio');
 sub initPlugin {
     my ($class) = @_;
 
-    Slim::Utils::Strings::loadFile(catfile($pluginDir, 'strings.txt'));
+    warn "[SverigesRadio] initPlugin: entering (class=$class, pluginDir=$pluginDir)\n";
+    $log->error("SverigesRadio initPlugin: starting");
+
+    my $strings_file = catfile($pluginDir, 'strings.txt');
+    warn "[SverigesRadio] initPlugin: loading strings from $strings_file\n";
+    eval { Slim::Utils::Strings::loadFile($strings_file) };
+    if ($@) {
+        warn "[SverigesRadio] initPlugin: loadFile FAILED: $@\n";
+        $log->error("loadFile failed: $@");
+    }
 
     $prefs->init({
         quality         => 'hi',
         channels_filter => 'all',
     });
+    warn "[SverigesRadio] initPlugin: prefs initialized\n";
 
     Slim::Player::ProtocolHandlers->registerHandler(
         'sverigesradio',
         'Plugins::SverigesRadio::ProtocolHandler'
     );
+    warn "[SverigesRadio] initPlugin: protocol handler registered\n";
 
     Slim::Formats::RemoteMetadata->registerParser(
         match => qr{sverigesradio\.se/topsy/direkt}i,
@@ -52,20 +68,38 @@ sub initPlugin {
         sub { return $class->_pluginDataFor('icon') || 'html/images/radio.png' },
     );
 
-    $class->SUPER::initPlugin(
-        feed   => \&topLevelFeed,
-        tag    => 'sverigesradio',
-        menu   => 'radios',
-        weight => 75,
-    );
+    warn "[SverigesRadio] initPlugin: calling SUPER::initPlugin\n";
+    eval {
+        $class->SUPER::initPlugin(
+            feed   => \&topLevelFeed,
+            tag    => 'sverigesradio',
+            menu   => 'radios',
+            weight => 75,
+        );
+    };
+    if ($@) {
+        warn "[SverigesRadio] initPlugin: SUPER::initPlugin FAILED: $@\n";
+        $log->error("SUPER::initPlugin failed: $@");
+    }
+    warn "[SverigesRadio] initPlugin: SUPER::initPlugin returned\n";
 
     Slim::Control::Request::subscribe(\&_onPlaybackChange,
         [['playlist'], ['newsong', 'pause', 'stop', 'resume']]);
 
     if (main::WEBUI) {
-        require Plugins::SverigesRadio::Settings;
-        Plugins::SverigesRadio::Settings->new();
+        warn "[SverigesRadio] initPlugin: loading Settings\n";
+        eval {
+            require Plugins::SverigesRadio::Settings;
+            Plugins::SverigesRadio::Settings->new();
+        };
+        if ($@) {
+            warn "[SverigesRadio] initPlugin: Settings load FAILED: $@\n";
+            $log->error("Settings load failed: $@");
+        }
     }
+
+    warn "[SverigesRadio] initPlugin: DONE\n";
+    $log->error("SverigesRadio initPlugin: complete");
 }
 
 sub shutdownPlugin {
