@@ -3,13 +3,13 @@
   <plugins>
     <plugin minTarget="8.0" maxTarget="*">
       <name>SverigesRadio</name>
-      <version>1.0</version>
+      <version>1.1</version>
       <title lang="EN">Sveriges Radio</title>
       <title lang="SV">Sveriges Radio</title>
       <desc lang="EN">Live radio and on-demand programmes from Sveriges Radio — Sweden's public broadcaster. Supports all 52 channels including P1, P2, P3, P4 and local stations, plus on-demand episode browsing and search.</desc>
       <desc lang="SV">Direktradio och on-demand-program från Sveriges Radio. Stöder alla 52 kanaler inklusive P1, P2, P3, P4 och lokalradio, samt bläddring och sökning bland on-demand-avsnitt.</desc>
-      <url>https://github.com/Nornode/lms-plugin-sverigesradio/releases/download/v1.0/SverigesRadio-1.0.zip</url>
-      <sha>2ef85606901c676f753e3951c595624f0391eb6f</sha>
+      <url>https://github.com/Nornode/lms-plugin-sverigesradio/releases/download/v1.1/SverigesRadio-1.1.zip</url>
+      <sha>26f38385639ecd98f5c08a5d723327498ebb2b57</sha>
       <creator>Robert Lagus</creator>
       <category>radio</category>
       <license>GPLv2</license>
