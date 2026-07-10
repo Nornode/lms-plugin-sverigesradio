@@ -7,7 +7,7 @@
 	<description>PLUGIN_SR_DESC</description>
 	<creator>Robert Lagus</creator>
 	<category>radio</category>
-	<defaultState>disabled</defaultState>
+	<defaultState>enabled</defaultState>
 	<optionsURL>plugins/SverigesRadio/settings/basic.html</optionsURL>
 	<icon>plugins/SverigesRadio/html/images/icon.png</icon>
 	<targetApplication>
