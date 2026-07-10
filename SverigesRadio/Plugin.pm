@@ -357,19 +357,41 @@ sub searchFeed {
         return $cb->([{ type => 'text', name => Slim::Utils::Strings::cstring($client, 'PLUGIN_SR_NO_RESULTS') }]);
     }
 
-    Plugins::SverigesRadio::API->searchEpisodes($query, sub {
-        my $episodes = shift;
+    my ($programs, $episodes);
 
-        unless ($episodes && @$episodes) {
+    my $combine = sub {
+        return unless defined $programs && defined $episodes;
+
+        my @items;
+
+        if (@$programs) {
+            push @items, { type => 'text', name => Slim::Utils::Strings::cstring($client, 'PLUGIN_SR_SEARCH_PROGRAMS') };
+            push @items, map { _programItem($_) } @$programs;
+        }
+
+        if (@$episodes) {
+            push @items, { type => 'text', name => Slim::Utils::Strings::cstring($client, 'PLUGIN_SR_EPISODES') };
+            push @items, map {
+                my $prog_name = ($_->{program} && $_->{program}{name}) ? $_->{program}{name} : '';
+                _episodeItem($_, $prog_name, '')
+            } @$episodes;
+        }
+
+        unless (@items) {
             return $cb->([{ type => 'text', name => Slim::Utils::Strings::cstring($client, 'PLUGIN_SR_NO_RESULTS') }]);
         }
 
-        my $items = [ map {
-            my $prog_name = ($_->{program} && $_->{program}{name}) ? $_->{program}{name} : '';
-            _episodeItem($_, $prog_name, '')
-        } @$episodes ];
+        $cb->({ items => \@items });
+    };
 
-        $cb->({ items => $items });
+    Plugins::SverigesRadio::API->searchPrograms($query, sub {
+        $programs = shift || [];
+        $combine->();
+    });
+
+    Plugins::SverigesRadio::API->searchEpisodes($query, sub {
+        $episodes = shift || [];
+        $combine->();
     });
 }
 

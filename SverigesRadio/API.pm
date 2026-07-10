@@ -111,6 +111,20 @@ sub episodes {
     });
 }
 
+sub searchPrograms {
+    my ($class, $query, $cb) = @_;
+
+    my $lc = lc($query);
+    $class->allPrograms(sub {
+        my $all = shift || [];
+        my @matched = grep {
+            index(lc($_->{name}        // ''), $lc) >= 0 ||
+            index(lc($_->{description} // ''), $lc) >= 0
+        } @$all;
+        $cb->(\@matched);
+    });
+}
+
 sub searchEpisodes {
     my ($class, $query, $cb) = @_;
 

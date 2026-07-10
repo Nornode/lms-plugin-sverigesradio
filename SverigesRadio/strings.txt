@@ -45,8 +45,12 @@ PLUGIN_SR_ONDEMAND
 	SV	On Demand / Poddradio
 
 PLUGIN_SR_SEARCH
-	EN	Search Episodes
-	SV	Sök avsnitt
+	EN	Search
+	SV	Sök
+
+PLUGIN_SR_SEARCH_PROGRAMS
+	EN	Programmes
+	SV	Program
 
 PLUGIN_SR_NATIONAL
 	EN	National Channels
