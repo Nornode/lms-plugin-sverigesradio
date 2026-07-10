@@ -9,7 +9,7 @@
       <desc lang="EN">Live radio and on-demand programmes from Sveriges Radio — Sweden's public broadcaster. Supports all 52 channels including P1, P2, P3, P4 and local stations, plus on-demand episode browsing and search.</desc>
       <desc lang="SV">Direktradio och on-demand-program från Sveriges Radio. Stöder alla 52 kanaler inklusive P1, P2, P3, P4 och lokalradio, samt bläddring och sökning bland on-demand-avsnitt.</desc>
       <url>https://github.com/Nornode/lms-plugin-sverigesradio/releases/download/v1.3/SverigesRadio-1.3.zip</url>
-      <sha>075aca6e0f4fedf43decaf6a172b656d53185373</sha>
+      <sha>20bc7b2e4878b46aff595ccc23ed914d5106fcc9</sha>
       <creator>Robert Lagus</creator>
       <category>radio</category>
       <license>GPLv2</license>
