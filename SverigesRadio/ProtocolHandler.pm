@@ -2,16 +2,12 @@ package Plugins::SverigesRadio::ProtocolHandler;
 
 use strict;
 
-BEGIN { warn "[SverigesRadio] ProtocolHandler.pm: BEGIN\n"; }
-
 use base qw(Slim::Player::Protocols::HTTPS);
 
 use Digest::MD5 qw(md5_hex);
 use Slim::Utils::Cache;
 use Slim::Utils::Log;
 use Slim::Utils::Prefs;
-
-warn "[SverigesRadio] ProtocolHandler.pm: loaded\n";
 
 my $log   = logger('plugin.sverigesradio');
 my $cache = Slim::Utils::Cache->new();
@@ -106,9 +102,10 @@ sub getMetadataFor {
 # Capability overrides
 # --------------------------------------------------------------------------
 
-sub isRemote    { return 1 }
-sub canSeek     { return 0 }   # Live streams do not support seeking
-sub isLive      { return 1 }
+sub isRemote       { return 1 }
+sub canSeek        { return 0 }
+sub isLive         { return 1 }
+sub getFormatForURL { return 'mp3' }
 
 # Mark as user-chosen for Last.fm / ListenBrainz scrobbling
 sub audioScrobblerSource { return 'R' }  # R = radio/non-personalised

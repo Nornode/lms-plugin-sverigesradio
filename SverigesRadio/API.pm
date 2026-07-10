@@ -2,8 +2,6 @@ package Plugins::SverigesRadio::API;
 
 use strict;
 
-BEGIN { warn "[SverigesRadio] API.pm: BEGIN\n"; }
-
 use Digest::MD5 qw(md5_hex);
 use JSON::XS::VersionOneAndTwo;
 use List::Util qw(first);
@@ -11,8 +9,6 @@ use URI::Escape;
 use Slim::Networking::SimpleAsyncHTTP;
 use Slim::Utils::Cache;
 use Slim::Utils::Log;
-
-warn "[SverigesRadio] API.pm: loaded\n";
 
 my $log   = logger('plugin.sverigesradio');
 my $cache = Slim::Utils::Cache->new();

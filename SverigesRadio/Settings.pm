@@ -2,14 +2,10 @@ package Plugins::SverigesRadio::Settings;
 
 use strict;
 
-BEGIN { warn "[SverigesRadio] Settings.pm: BEGIN\n"; }
-
 use base qw(Slim::Web::Settings);
 
 use Slim::Utils::Log;
 use Slim::Utils::Prefs;
-
-warn "[SverigesRadio] Settings.pm: loaded\n";
 
 my $prefs = preferences('plugin.sverigesradio');
 my $log   = logger('plugin.sverigesradio');
