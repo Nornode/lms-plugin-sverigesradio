@@ -38,6 +38,7 @@ sub initPlugin {
     $prefs->init({
         quality         => 'hi',
         channels_filter => 'all',
+        recent_searches => [],
     });
 
     Slim::Player::ProtocolHandlers->registerHandler(
@@ -172,13 +173,16 @@ sub liveFeed {
 sub _channelItem {
     my ($ch) = @_;
     return {
-        type      => 'audio',
-        name      => $ch->{name},
-        line1     => $ch->{name},
-        line2     => $ch->{tagline} || '',
-        image     => $ch->{image}   || '',
-        url       => 'sverigesradio://live/' . $ch->{id},
-        on_select => 'play',
+        type            => 'audio',
+        name            => $ch->{name},
+        line1           => $ch->{name},
+        line2           => $ch->{tagline} || '',
+        image           => $ch->{image}   || '',
+        url             => 'sverigesradio://live/' . $ch->{id},
+        on_select       => 'play',
+        favorites_url   => 'sverigesradio://live/' . $ch->{id},
+        favorites_title => $ch->{name},
+        favorites_icon  => $ch->{image} || '',
     };
 }
 
@@ -354,8 +358,32 @@ sub searchFeed {
     $query =~ s/^\s+|\s+$//g;
 
     unless ($query) {
-        return $cb->([{ type => 'text', name => Slim::Utils::Strings::cstring($client, 'PLUGIN_SR_NO_RESULTS') }]);
+        my $recent = $prefs->get('recent_searches') || [];
+
+        unless (@$recent) {
+            return $cb->([{ type => 'text', name => Slim::Utils::Strings::cstring($client, 'PLUGIN_SR_NO_RESULTS') }]);
+        }
+
+        my @items = (
+            { type => 'text', name => Slim::Utils::Strings::cstring($client, 'PLUGIN_SR_RECENT_SEARCHES') },
+            map {
+                my $term = $_;
+                {
+                    type        => 'link',
+                    name        => $term,
+                    url         => \&searchFeed,
+                    passthrough => [{ search => $term }],
+                }
+            } @$recent
+        );
+
+        return $cb->({ items => \@items });
     }
+
+    my $recent  = $prefs->get('recent_searches') || [];
+    my @updated = ($query, grep { $_ ne $query } @$recent);
+    @updated    = @updated[0..9] if @updated > 10;
+    $prefs->set('recent_searches', \@updated);
 
     my ($programs, $episodes);
 

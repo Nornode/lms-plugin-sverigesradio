@@ -76,6 +76,10 @@ PLUGIN_SR_NOW_PLAYING
 	EN	Now playing
 	SV	Spelas nu
 
+PLUGIN_SR_RECENT_SEARCHES
+	EN	Recent Searches
+	SV	Senaste sökningar
+
 PLUGIN_SR_NO_RESULTS
 	EN	No results found
 	SV	Inga resultat hittades
