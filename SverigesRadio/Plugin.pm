@@ -36,7 +36,7 @@ sub initPlugin {
     $log->error("loadFile failed: $@") if $@;
 
     $prefs->init({
-        quality         => 'hi',
+        quality         => 'mp3',
         channels_filter => 'all',
         recent_searches => [],
     });
@@ -127,17 +127,17 @@ sub topLevelFeed {
 sub liveFeed {
     my ($client, $cb) = @_;
 
-    my $quality = $prefs->get('quality') || 'hi';
+    my $quality = $prefs->get('quality') || 'mp3';
     my $filter  = $prefs->get('channels_filter') || 'all';
 
     Plugins::SverigesRadio::API->channels($quality, sub {
         my $channels = shift;
 
         unless ($channels && @$channels) {
-            return $cb->([{
+            return $cb->({ items => [{
                 type => 'text',
                 name => Slim::Utils::Strings::cstring($client, 'PLUGIN_SR_ERROR'),
-            }]);
+            }] });
         }
 
         if ($filter eq 'national') {
@@ -221,7 +221,7 @@ sub categoriesFeed {
         my $cats = shift;
 
         unless ($cats && @$cats) {
-            return $cb->([{ type => 'text', name => Slim::Utils::Strings::cstring($client, 'PLUGIN_SR_ERROR') }]);
+            return $cb->({ items => [{ type => 'text', name => Slim::Utils::Strings::cstring($client, 'PLUGIN_SR_ERROR') }] });
         }
 
         my $items = [ map {
@@ -246,7 +246,7 @@ sub programsFeed {
         my $programs = shift;
 
         unless ($programs && @$programs) {
-            return $cb->([{ type => 'text', name => Slim::Utils::Strings::cstring($client, 'PLUGIN_SR_NO_RESULTS') }]);
+            return $cb->({ items => [{ type => 'text', name => Slim::Utils::Strings::cstring($client, 'PLUGIN_SR_NO_RESULTS') }] });
         }
 
         my $items = [ map { _programItem($_) } @$programs ];
@@ -261,7 +261,7 @@ sub allProgramsFeed {
         my $programs = shift;
 
         unless ($programs && @$programs) {
-            return $cb->([{ type => 'text', name => Slim::Utils::Strings::cstring($client, 'PLUGIN_SR_ERROR') }]);
+            return $cb->({ items => [{ type => 'text', name => Slim::Utils::Strings::cstring($client, 'PLUGIN_SR_ERROR') }] });
         }
 
         my $items = [ map { _programItem($_) } @$programs ];
@@ -275,7 +275,7 @@ sub _programItem {
     my $feed_url = sprintf('http://127.0.0.1:%d/plugins/SverigesRadio/programfeed?id=%d&name=%s',
         $port, $prog->{id}, URI::Escape::uri_escape_utf8($prog->{name}));
     return {
-        type            => 'link',
+        type            => 'playlist',
         name            => $prog->{name},
         line1           => $prog->{name},
         line2           => ($prog->{channel} && $prog->{channel}{name}) ? $prog->{channel}{name} : '',
@@ -302,7 +302,7 @@ sub episodesFeed {
         my $pagination = $result->{pagination} || {};
 
         unless (@$episodes) {
-            return $cb->([{ type => 'text', name => Slim::Utils::Strings::cstring($client, 'PLUGIN_SR_NO_RESULTS') }]);
+            return $cb->({ items => [{ type => 'text', name => Slim::Utils::Strings::cstring($client, 'PLUGIN_SR_NO_RESULTS') }] });
         }
 
         my $items = [ map { _episodeItem($_, $program_name, $program_image) } @$episodes ];
@@ -361,7 +361,7 @@ sub searchFeed {
         my $recent = $prefs->get('recent_searches') || [];
 
         unless (@$recent) {
-            return $cb->([{ type => 'text', name => Slim::Utils::Strings::cstring($client, 'PLUGIN_SR_NO_RESULTS') }]);
+            return $cb->({ items => [{ type => 'text', name => Slim::Utils::Strings::cstring($client, 'PLUGIN_SR_NO_RESULTS') }] });
         }
 
         my @items = (
@@ -406,7 +406,7 @@ sub searchFeed {
         }
 
         unless (@items) {
-            return $cb->([{ type => 'text', name => Slim::Utils::Strings::cstring($client, 'PLUGIN_SR_NO_RESULTS') }]);
+            return $cb->({ items => [{ type => 'text', name => Slim::Utils::Strings::cstring($client, 'PLUGIN_SR_NO_RESULTS') }] });
         }
 
         $cb->({ items => \@items });

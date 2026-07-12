@@ -28,7 +28,8 @@ sub scanUrl {
         return;
     }
 
-    my $quality = $prefs->get('quality') || 'hi';
+    # Always request mp3 quality so streams match getFormatForURL
+    my $quality = 'mp3';
 
     Plugins::SverigesRadio::API->channels($quality, sub {
         my $channels = shift || [];
@@ -39,7 +40,7 @@ sub scanUrl {
             $args->{song}->pluginData(channelInfo => $ch);
 
             main::INFOLOG && $log->is_info &&
-                $log->info("SR live channel $channel_id → " . $ch->{liveaudio}{url});
+                $log->info("SR live channel $channel_id \x{2192} " . $ch->{liveaudio}{url});
         } else {
             $log->error("SR: no stream URL found for channel $channel_id");
         }
@@ -93,8 +94,8 @@ sub getMetadataFor {
         artist  => $artist,
         album   => Slim::Utils::Strings::string('PLUGIN_SR_LIVE'),
         cover   => $cover,
-        type    => 'MP3 (H)',
-        bitrate => $prefs->get('quality') eq 'hi' ? '192 kbps' : '96 kbps',
+        type    => 'MP3 (CBR)',
+        bitrate => '128 kbps',
     };
 }
 

@@ -3,7 +3,7 @@
 	<id>1149fda5-e583-44ab-840a-c43664a3987d</id>
 	<name>PLUGIN_SR_NAME</name>
 	<module>Plugins::SverigesRadio::Plugin</module>
-	<version>1.7</version>
+	<version>1.8</version>
 	<description>PLUGIN_SR_DESC</description>
 	<creator>Robert Lagus</creator>
 	<category>radio</category>
