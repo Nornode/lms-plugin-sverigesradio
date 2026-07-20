@@ -100,6 +100,22 @@ sub getMetadataFor {
 }
 
 # --------------------------------------------------------------------------
+# Direct streaming — let the player connect to the resolved HTTPS URL
+# --------------------------------------------------------------------------
+
+sub canDirectStream {
+    my ($class, $client, $url, $inType) = @_;
+    return 0;
+}
+
+sub canDirectStreamSong {
+    my ($class, $client, $song) = @_;
+    my $url = $song->streamUrl() || return 0;
+    return 0 unless $url =~ /^https?:/;
+    return $url;
+}
+
+# --------------------------------------------------------------------------
 # Capability overrides
 # --------------------------------------------------------------------------
 
