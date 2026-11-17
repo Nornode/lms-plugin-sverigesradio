@@ -4,11 +4,12 @@ use strict;
 
 use base qw(Slim::Plugin::OPMLBased);
 
+use Encode qw(encode_utf8);
 use File::Spec::Functions qw(catfile);
+use POSIX qw(strftime);
 use URI::Escape;
 
 use Plugins::SverigesRadio::API;
-use Slim::Formats::RemoteMetadata;
 use Slim::Utils::Log;
 use Slim::Utils::Prefs;
 use Slim::Utils::Strings;
@@ -20,7 +21,7 @@ BEGIN {
     $pluginDir =~ s/Plugin\.pm$//;
 }
 
-my $log   = Slim::Utils::Log->addLogCategory({
+my $log = Slim::Utils::Log->addLogCategory({
     category     => 'plugin.sverigesradio',
     defaultLevel => 'INFO',
     description  => 'PLUGIN_SR_DESC',
@@ -36,19 +37,20 @@ sub initPlugin {
     $log->error("loadFile failed: $@") if $@;
 
     $prefs->init({
-        quality         => 'mp3',
-        channels_filter => 'all',
-        recent_searches => [],
+        quality          => 'hi',
+        channels_filter  => 'all',
+        use_http_streams => 1,
+        recent_searches  => [],
     });
+
+    # Migrate legacy 'mp3' quality pref from v1.8/v1.9
+    if (($prefs->get('quality') // '') eq 'mp3') {
+        $prefs->set('quality', 'hi');
+    }
 
     Slim::Player::ProtocolHandlers->registerHandler(
         'sverigesradio',
         'Plugins::SverigesRadio::ProtocolHandler'
-    );
-
-    Slim::Formats::RemoteMetadata->registerParser(
-        match => qr{sverigesradio\.se/topsy/direkt}i,
-        func  => \&_handleLiveMetadata,
     );
 
     Slim::Player::ProtocolHandlers->registerIconHandler(
@@ -81,6 +83,11 @@ sub initPlugin {
         };
         $log->error("Settings load failed: $@") if $@;
     }
+
+    # Pre-warm API cache in the background shortly after LMS startup
+    Slim::Utils::Timers::setTimer(undef, time() + 5, sub {
+        Plugins::SverigesRadio::API->warmCache($prefs->get('quality'));
+    });
 }
 
 sub shutdownPlugin {
@@ -127,7 +134,7 @@ sub topLevelFeed {
 sub liveFeed {
     my ($client, $cb) = @_;
 
-    my $quality = $prefs->get('quality') || 'mp3';
+    my $quality = Plugins::SverigesRadio::API->normalizeQuality($prefs->get('quality'));
     my $filter  = $prefs->get('channels_filter') || 'all';
 
     Plugins::SverigesRadio::API->channels($quality, sub {
@@ -153,7 +160,7 @@ sub liveFeed {
         if (@national) {
             push @$items, {
                 name  => Slim::Utils::Strings::cstring($client, 'PLUGIN_SR_NATIONAL'),
-                type  => 'playlist',
+                type  => 'link',
                 items => [ map { _channelItem($_) } @national ],
             };
         }
@@ -161,7 +168,7 @@ sub liveFeed {
         if (@local) {
             push @$items, {
                 name  => Slim::Utils::Strings::cstring($client, 'PLUGIN_SR_LOCAL'),
-                type  => 'playlist',
+                type  => 'link',
                 items => [ map { _channelItem($_) } @local ],
             };
         }
@@ -273,9 +280,9 @@ sub _programItem {
     my ($prog) = @_;
     my $port     = preferences('server')->get('httpport') || 9000;
     my $feed_url = sprintf('http://127.0.0.1:%d/plugins/SverigesRadio/programfeed?id=%d&name=%s',
-        $port, $prog->{id}, URI::Escape::uri_escape_utf8($prog->{name}));
+        $port, $prog->{id}, URI::Escape::uri_escape_utf8($prog->{name} // ''));
     return {
-        type            => 'playlist',
+        type            => 'link',
         name            => $prog->{name},
         line1           => $prog->{name},
         line2           => ($prog->{channel} && $prog->{channel}{name}) ? $prog->{channel}{name} : '',
@@ -291,13 +298,13 @@ sub _programItem {
 
 sub episodesFeed {
     my ($client, $cb, $params, $args) = @_;
-    my $program_id   = $args->{program_id};
-    my $program_name = $args->{program_name} || '';
+    my $program_id    = $args->{program_id};
+    my $program_name  = $args->{program_name} || '';
     my $program_image = $args->{program_image} || '';
-    my $page         = $args->{page} || 1;
+    my $page          = $args->{page} || 1;
 
     Plugins::SverigesRadio::API->episodes($program_id, $page, sub {
-        my $result = shift;
+        my $result     = shift;
         my $episodes   = $result->{episodes}   || [];
         my $pagination = $result->{pagination} || {};
 
@@ -322,24 +329,91 @@ sub episodesFeed {
     });
 }
 
+sub _parseSrDateMs {
+    my ($val) = @_;
+    return undef unless defined $val && $val =~ m{/Date\((-?\d+)\)/};
+    return $1;
+}
+
+sub _extractEpisodeAudio {
+    my ($ep) = @_;
+    return () unless ref $ep eq 'HASH';
+
+    my ($url, $duration, $mime);
+
+    if (ref $ep->{listenpodfile} eq 'HASH' && $ep->{listenpodfile}{url}) {
+        $url      = $ep->{listenpodfile}{url};
+        $duration = $ep->{listenpodfile}{duration};
+    } elsif (ref $ep->{downloadpodfile} eq 'HASH' && $ep->{downloadpodfile}{url}) {
+        $url      = $ep->{downloadpodfile}{url};
+        $duration = $ep->{downloadpodfile}{duration};
+    } elsif (ref $ep->{broadcast} eq 'HASH' && ref $ep->{broadcast}{broadcastfiles} eq 'ARRAY') {
+        my $stop_ms = _parseSrDateMs($ep->{broadcast}{availablestoputc});
+        my $expired = defined $stop_ms && (time() * 1000 > $stop_ms);
+        if (!$expired && @{ $ep->{broadcast}{broadcastfiles} }) {
+            my $bf = $ep->{broadcast}{broadcastfiles}[0];
+            if (ref $bf eq 'HASH' && $bf->{url}) {
+                $url      = $bf->{url};
+                $duration = $bf->{duration};
+            }
+        }
+    }
+
+    return () unless $url;
+
+    # Use plain HTTP on SR's static/lyssna CDNs when enabled so LMS
+    # Scanner::Remote starts playback on headers without a 2-connection HTTPS pre-scan.
+    if ($prefs->get('use_http_streams')) {
+        $url =~ s{^https://((?:static|lyssna)-cdn\.sr\.se/)}{http://$1}i;
+    }
+
+    if ($url =~ /\.m4a(?:\?|$)/i) {
+        $mime = 'audio/mp4';
+    } elsif ($url =~ /\.mp3(?:\?|$)/i) {
+        $mime = 'audio/mpeg';
+    }
+
+    return ($url, $duration, $mime);
+}
+
+sub _formatDuration {
+    my ($secs) = @_;
+    return '' unless $secs && $secs > 0;
+    my $m = int($secs / 60);
+    my $h = int($m / 60);
+    if ($h > 0) {
+        $m = $m % 60;
+        return sprintf('%dh %02dm', $h, $m);
+    }
+    return ($m || 1) . ' min';
+}
+
 sub _episodeItem {
     my ($ep, $program_name, $program_image) = @_;
 
-    my $audio_url = ($ep->{listenpodfile} && $ep->{listenpodfile}{url})
-                    ? $ep->{listenpodfile}{url} : undef;
-    my $duration  = ($ep->{listenpodfile} && $ep->{listenpodfile}{duration})
-                    ? $ep->{listenpodfile}{duration} : undef;
-    my $title     = $ep->{title} || $program_name;
-    my $image     = $ep->{imageurl} || $program_image;
+    my ($audio_url, $duration, $mime) = _extractEpisodeAudio($ep);
+    my $title = $ep->{title} || $program_name;
+    my $image = $ep->{imageurl} || $program_image || '';
+
+    my @meta_parts;
+    if (my $ms = _parseSrDateMs($ep->{publishdateutc})) {
+        push @meta_parts, strftime('%Y-%m-%d', localtime(int($ms / 1000)));
+    }
+    if (my $dur_str = _formatDuration($duration)) {
+        push @meta_parts, $dur_str;
+    }
+    push @meta_parts, $program_name if $program_name;
+    my $line2 = join(" \x{00B7} ", @meta_parts);
 
     return {
         type            => $audio_url ? 'audio' : 'text',
         name            => $title,
         line1           => $title,
-        line2           => $program_name,
+        line2           => $line2,
         image           => $image,
         url             => $audio_url || '',
-        on_select       => 'play',
+        ($audio_url ? (on_select => 'play') : ()),
+        ($mime      ? (mime      => $mime)   : ()),
         favorites_url   => $audio_url || '',
         favorites_title => $title,
         favorites_icon  => $image,
@@ -348,7 +422,7 @@ sub _episodeItem {
 }
 
 # --------------------------------------------------------------------------
-# Episode search
+# Episode & programme search
 # --------------------------------------------------------------------------
 
 sub searchFeed {
@@ -432,26 +506,30 @@ sub _onPlaybackChange {
     my $client  = $request->client() or return;
     my $cmd     = $request->getRequest(1);
 
-    my $song = $client->playingSong() or return;
-    my $url  = $song->currentTrack()->url();
-
+    # Always cancel any existing polling timer first (e.g. on 'stop' when playingSong is undef)
     Slim::Utils::Timers::killTimers($client, \&_pollNowPlaying);
+
+    return unless $cmd eq 'newsong' || $cmd eq 'resume';
+
+    my $song = $client->playingSong() or return;
+    my $track = $song->currentTrack() or return;
+    my $url  = $track->url() || '';
 
     if ($url =~ m{^sverigesradio://live/(\d+)}) {
         my $channel_id = $1;
-        if ($cmd eq 'newsong' || $cmd eq 'resume') {
-            Slim::Utils::Timers::setTimer(
-                $client, time() + 60, \&_pollNowPlaying, $channel_id
-            );
-        }
+        _fetchAndUpdateNowPlaying($client, $channel_id);
+        Slim::Utils::Timers::setTimer(
+            $client, time() + 60, \&_pollNowPlaying, $channel_id
+        );
     }
 }
 
-sub _pollNowPlaying {
+sub _fetchAndUpdateNowPlaying {
     my ($client, $channel_id) = @_;
 
     Plugins::SverigesRadio::API->nowPlaying($channel_id, sub {
         my $ep = shift or return;
+        return unless $client;
 
         if (my $song = $client->playingSong()) {
             $song->pluginData(nowPlaying => $ep);
@@ -459,24 +537,26 @@ sub _pollNowPlaying {
 
         Slim::Control::Request::notifyFromArray($client, ['newmetadata']);
     });
-
-    # Reschedule every 60 s while this channel is playing
-    my $url = '';
-    if (my $song = $client->playingSong()) {
-        $url = $song->currentTrack()->url() || '';
-    }
-
-    if ($url =~ m{^sverigesradio://live/\Q$channel_id\E}) {
-        Slim::Utils::Timers::setTimer(
-            $client, time() + 60, \&_pollNowPlaying, $channel_id
-        );
-    }
 }
 
-# Registered with RemoteMetadata for live stream URLs that bypass the custom scheme
-sub _handleLiveMetadata {
-    my ($client, $url, $metadata) = @_;
-    return 1;
+sub _pollNowPlaying {
+    my ($client, $channel_id) = @_;
+    return unless $client;
+
+    my $url = '';
+    if (my $song = $client->playingSong()) {
+        if (my $track = $song->currentTrack()) {
+            $url = $track->url() || '';
+        }
+    }
+
+    return unless $url =~ m{^sverigesradio://live/\Q$channel_id\E(?:$|\D)};
+
+    _fetchAndUpdateNowPlaying($client, $channel_id);
+
+    Slim::Utils::Timers::setTimer(
+        $client, time() + 60, \&_pollNowPlaying, $channel_id
+    );
 }
 
 # --------------------------------------------------------------------------
@@ -498,34 +578,37 @@ sub _webProgramFeed {
     my $program_id   = $p{id}   || '';
     my $program_name = $p{name} || 'Programme';
 
-    unless ($program_id) {
+    unless ($program_id =~ /^\d+$/) {
         $response->code(400);
         $response->content_type('text/plain');
-        $response->content('id required');
+        $response->content('valid id required');
         $httpClient->send_response($response);
         Slim::Web::HTTP::closeHTTPSocket($httpClient);
         return;
     }
 
     Plugins::SverigesRadio::API->episodes($program_id, 1, sub {
-        my $result   = shift;
-        my $episodes = $result->{episodes} || [];
+        my $result = shift;
 
-        my @outlines;
-        for my $ep (@$episodes) {
-            my $url = ($ep->{listenpodfile} && $ep->{listenpodfile}{url})
-                      ? $ep->{listenpodfile}{url} : '';
-            next unless $url;
-            my $title = _xe($ep->{title} || $program_name);
-            my $image = _xe($ep->{imageurl} || '');
-            push @outlines, qq{    <outline type="audio" text="$title" url="} . _xe($url) . qq{" image="$image"/>};
-        }
+        eval {
+            my $episodes = ($result && $result->{episodes}) ? $result->{episodes} : [];
 
-        my $body = @outlines
-            ? join("\n", @outlines)
-            : '    <outline type="text" text="No episodes available"/>';
+            my @outlines;
+            for my $ep (@$episodes) {
+                my ($url, $duration, $mime) = _extractEpisodeAudio($ep);
+                next unless $url;
+                my $title = _xe($ep->{title} || $program_name);
+                my $image = _xe($ep->{imageurl} || '');
+                my $dur_attr = $duration ? qq{ duration="$duration"} : '';
+                my $mime_attr = $mime ? qq{ mime="$mime"} : '';
+                push @outlines, qq{    <outline type="audio" text="$title" url="} . _xe($url) . qq{" image="$image"$dur_attr$mime_attr/>};
+            }
 
-        my $opml = sprintf(<<'OPML', _xe($program_name), $body);
+            my $body = @outlines
+                ? join("\n", @outlines)
+                : '    <outline type="text" text="No episodes available"/>';
+
+            my $opml = sprintf(<<'OPML', _xe($program_name), $body);
 <?xml version="1.0" encoding="UTF-8"?>
 <opml version="1">
   <head><title>%s</title></head>
@@ -535,11 +618,25 @@ sub _webProgramFeed {
 </opml>
 OPML
 
-        $response->code(200);
-        $response->content_type('text/xml; charset=utf-8');
-        $response->content($opml);
-        $httpClient->send_response($response);
-        Slim::Web::HTTP::closeHTTPSocket($httpClient);
+            # HTTP::Message requires octets, not Perl wide-character strings
+            my $bytes = encode_utf8($opml);
+            $response->code(200);
+            $response->content_type('text/xml; charset=utf-8');
+            $response->content($bytes);
+            $httpClient->send_response($response);
+            Slim::Web::HTTP::closeHTTPSocket($httpClient);
+        };
+
+        if ($@) {
+            $log->error("SR _webProgramFeed error for id=$program_id: $@");
+            eval {
+                $response->code(500);
+                $response->content_type('text/plain');
+                $response->content('Internal error');
+                $httpClient->send_response($response);
+                Slim::Web::HTTP::closeHTTPSocket($httpClient);
+            };
+        }
     });
 }
 

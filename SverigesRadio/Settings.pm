@@ -19,15 +19,16 @@ sub page {
 }
 
 sub prefs {
-    return ($prefs, qw(quality channels_filter));
+    return ($prefs, qw(quality channels_filter use_http_streams));
 }
 
 sub beforeRender {
     my ($class, $params, $client) = @_;
 
     $params->{quality_options} = [
-        { value => 'hi', label => 'PLUGIN_SR_QUALITY_HI' },
-        { value => 'lo', label => 'PLUGIN_SR_QUALITY_LO' },
+        { value => 'hi',     label => 'PLUGIN_SR_QUALITY_HI' },
+        { value => 'normal', label => 'PLUGIN_SR_QUALITY_NORMAL' },
+        { value => 'lo',     label => 'PLUGIN_SR_QUALITY_LO' },
     ];
 
     $params->{filter_options} = [

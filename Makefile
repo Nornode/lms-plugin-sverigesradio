@@ -2,7 +2,10 @@ HA_HOST  ?= homeassistant.local
 HA_SLUG  ?= local_lms
 PLUGIN   := SverigesRadio
 
-.PHONY: deploy restart logs deploy-restart
+.PHONY: deploy restart logs deploy-restart test
+
+test:
+	perl -ISverigesRadio t/01-compile-and-unit.t
 
 deploy:
 	rsync -avz --delete ./$(PLUGIN)/ \

@@ -3,12 +3,12 @@ package Plugins::SverigesRadio::API;
 use strict;
 
 use Digest::MD5 qw(md5_hex);
-use JSON::XS::VersionOneAndTwo;
-use List::Util qw(first);
+use JSON::XS qw(decode_json);
 use URI::Escape;
 use Slim::Networking::SimpleAsyncHTTP;
 use Slim::Utils::Cache;
 use Slim::Utils::Log;
+use Slim::Utils::Timers;
 
 my $log   = logger('plugin.sverigesradio');
 my $cache = Slim::Utils::Cache->new();
@@ -21,12 +21,36 @@ use constant TTL_PROGRAMS   => 7200;    # 2h
 use constant TTL_EPISODES   => 3600;    # 1h
 use constant TTL_SEARCH     => 300;     # 5m
 use constant TTL_NOWPLAYING => 60;      # 60s
+use constant TTL_STALE      => 604800;  # 7d stale-while-error fallback
+
+my %VALID_QUALITIES = map { $_ => 1 } qw(hi normal lo);
+my %inFlight;
+
+sub normalizeQuality {
+    my ($class, $q) = @_;
+    return 'hi' unless defined $q && $VALID_QUALITIES{$q};
+    return $q;
+}
 
 # --- Public methods -------------------------------------------------------
 
+sub warmCache {
+    my ($class, $quality) = @_;
+    $quality = $class->normalizeQuality($quality);
+
+    main::INFOLOG && $log->is_info && $log->info("SR API: warming cache in background (quality=$quality)");
+    $class->channels($quality, sub {
+        $class->programCategories(sub {
+            $class->allPrograms(sub {
+                main::INFOLOG && $log->is_info && $log->info("SR API: background cache warm-up complete");
+            });
+        });
+    });
+}
+
 sub channels {
     my ($class, $quality, $cb) = @_;
-    $quality ||= 'hi';
+    $quality = $class->normalizeQuality($quality);
 
     my $params = "audioquality=$quality&size=100";
     my $key    = 'sr_channels_' . $quality;
@@ -35,10 +59,21 @@ sub channels {
         return $cb->($cached);
     }
 
-    $class->_getAll('/channels', $params, 'channels', TTL_CHANNELS, sub {
-        my $channels = shift;
-        $cache->set($key, $channels, TTL_CHANNELS);
-        $cb->($channels);
+    _coalesce($key, $cb, sub {
+        my $done = shift;
+        $class->_getAll('/channels', $params, 'channels', sub {
+            my ($channels, $failed) = @_;
+            if (!$failed && $channels && @$channels) {
+                $cache->set($key, $channels, TTL_CHANNELS);
+                $cache->set("${key}_stale", $channels, TTL_STALE);
+                return $done->($channels);
+            }
+            if (my $stale = $cache->get("${key}_stale")) {
+                $log->warn("SR API: serving stale channels cache for $quality");
+                return $done->($stale);
+            }
+            $done->($channels || []);
+        });
     });
 }
 
@@ -50,27 +85,49 @@ sub programCategories {
         return $cb->($cached);
     }
 
-    $class->_getAll('/programcategories', '', 'categories', TTL_CATEGORIES, sub {
-        my $cats = shift;
-        $cache->set($key, $cats, TTL_CATEGORIES);
-        $cb->($cats);
+    _coalesce($key, $cb, sub {
+        my $done = shift;
+        $class->_getAll('/programcategories', '', 'categories', sub {
+            my ($cats, $failed) = @_;
+            if (!$failed && $cats && @$cats) {
+                $cache->set($key, $cats, TTL_CATEGORIES);
+                $cache->set("${key}_stale", $cats, TTL_STALE);
+                return $done->($cats);
+            }
+            if (my $stale = $cache->get("${key}_stale")) {
+                $log->warn("SR API: serving stale categories cache");
+                return $done->($stale);
+            }
+            $done->($cats || []);
+        });
     });
 }
 
 sub programs {
     my ($class, $category_id, $cb) = @_;
 
-    my $params = "categoryid=$category_id&hasondemand=true&size=100";
+    my $params = "categoryid=$category_id&hasondemand=true&isarchived=false&size=100";
     my $key    = 'sr_programs_cat_' . $category_id;
 
     if (my $cached = $cache->get($key)) {
         return $cb->($cached);
     }
 
-    $class->_getAll('/programs/index', $params, 'programs', TTL_PROGRAMS, sub {
-        my $progs = shift;
-        $cache->set($key, $progs, TTL_PROGRAMS);
-        $cb->($progs);
+    _coalesce($key, $cb, sub {
+        my $done = shift;
+        $class->_getAll('/programs/index', $params, 'programs', sub {
+            my ($progs, $failed) = @_;
+            if (!$failed && $progs && @$progs) {
+                $cache->set($key, $progs, TTL_PROGRAMS);
+                $cache->set("${key}_stale", $progs, TTL_STALE);
+                return $done->($progs);
+            }
+            if (my $stale = $cache->get("${key}_stale")) {
+                $log->warn("SR API: serving stale programs cache for category $category_id");
+                return $done->($stale);
+            }
+            $done->($progs || []);
+        });
     });
 }
 
@@ -82,10 +139,21 @@ sub allPrograms {
         return $cb->($cached);
     }
 
-    $class->_getAll('/programs/index', 'hasondemand=true&size=100', 'programs', TTL_PROGRAMS, sub {
-        my $progs = shift;
-        $cache->set($key, $progs, TTL_PROGRAMS);
-        $cb->($progs);
+    _coalesce($key, $cb, sub {
+        my $done = shift;
+        $class->_getAll('/programs/index', 'hasondemand=true&isarchived=false&size=100', 'programs', sub {
+            my ($progs, $failed) = @_;
+            if (!$failed && $progs && @$progs) {
+                $cache->set($key, $progs, TTL_PROGRAMS);
+                $cache->set("${key}_stale", $progs, TTL_STALE);
+                return $done->($progs);
+            }
+            if (my $stale = $cache->get("${key}_stale")) {
+                $log->warn("SR API: serving stale allPrograms cache");
+                return $done->($stale);
+            }
+            $done->($progs || []);
+        });
     });
 }
 
@@ -100,14 +168,27 @@ sub episodes {
         return $cb->($cached);
     }
 
-    $class->_get('/episodes/index', $params, TTL_EPISODES, sub {
-        my $data = shift;
-        my $result = {
-            episodes   => $data->{episodes}   || [],
-            pagination => $data->{pagination} || {},
-        };
-        $cache->set($key, $result, TTL_EPISODES);
-        $cb->($result);
+    _coalesce($key, $cb, sub {
+        my $done = shift;
+        $class->_get('/episodes/index', $params, sub {
+            my $data = shift;
+            if ($data && ref $data eq 'HASH' && ref $data->{episodes} eq 'ARRAY') {
+                my $result = {
+                    episodes   => $data->{episodes},
+                    pagination => $data->{pagination} || {},
+                };
+                if (@{ $result->{episodes} }) {
+                    $cache->set($key, $result, TTL_EPISODES);
+                    $cache->set("${key}_stale", $result, TTL_STALE);
+                }
+                return $done->($result);
+            }
+            if (my $stale = $cache->get("${key}_stale")) {
+                $log->warn("SR API: serving stale episodes cache for program $program_id page $page");
+                return $done->($stale);
+            }
+            $done->({ episodes => [], pagination => {} });
+        });
     });
 }
 
@@ -135,11 +216,17 @@ sub searchEpisodes {
         return $cb->($cached);
     }
 
-    $class->_get('/episodes/search', $params, TTL_SEARCH, sub {
-        my $data = shift;
-        my $eps = $data->{episodes} || [];
-        $cache->set($key, $eps, TTL_SEARCH);
-        $cb->($eps);
+    _coalesce($key, $cb, sub {
+        my $done = shift;
+        $class->_get('/episodes/search', $params, sub {
+            my $data = shift;
+            if ($data && ref $data eq 'HASH' && ref $data->{episodes} eq 'ARRAY') {
+                my $eps = $data->{episodes};
+                $cache->set($key, $eps, TTL_SEARCH);
+                return $done->($eps);
+            }
+            $done->([]);
+        });
     });
 }
 
@@ -151,26 +238,45 @@ sub nowPlaying {
         return $cb->($cached);
     }
 
-    $class->_get('/scheduledepisodes', "channelid=$channel_id&size=10", TTL_NOWPLAYING, sub {
-        my $data = shift;
-        my $now  = time() * 1000;   # SR timestamps are milliseconds
-
-        my $ep = first {
-            defined $_->{starttimeutc} &&
-            defined $_->{endtimeutc}   &&
-            $_->{starttimeutc} <= $now &&
-            $now <= $_->{endtimeutc}
-        } @{ $data->{schedule} || [] };
-
-        $cache->set($key, $ep, TTL_NOWPLAYING);
-        $cb->($ep);
+    _coalesce($key, $cb, sub {
+        my $done = shift;
+        $class->_get('/scheduledepisodes/rightnow', "channelid=$channel_id", sub {
+            my $data = shift;
+            my $ep;
+            if ($data && ref $data eq 'HASH' && ref $data->{channel} eq 'HASH') {
+                my $cur = $data->{channel}{currentscheduledepisode};
+                $ep = $cur if ref $cur eq 'HASH' && $cur->{title};
+            }
+            $cache->set($key, $ep, TTL_NOWPLAYING) if $ep;
+            $done->($ep);
+        });
     });
 }
 
 # --- Private helpers ------------------------------------------------------
 
+sub _coalesce {
+    my ($key, $cb, $fetcher) = @_;
+
+    if ($inFlight{$key}) {
+        push @{ $inFlight{$key} }, $cb;
+        return;
+    }
+
+    $inFlight{$key} = [$cb];
+    $fetcher->(sub {
+        my ($result) = @_;
+        my $cbs = delete $inFlight{$key} || [];
+        for my $fn (@$cbs) {
+            eval { $fn->($result) };
+            $log->error("SR API callback error for $key: $@") if $@;
+        }
+    });
+}
+
 sub _get {
-    my ($class, $path, $params, $ttl, $cb) = @_;
+    my ($class, $path, $params, $cb, $retries) = @_;
+    $retries = 1 unless defined $retries;
 
     my $sep = $params ? '&' : '';
     my $url = BASE_URL . $path . '?format=json' . $sep . $params;
@@ -178,62 +284,90 @@ sub _get {
     Slim::Networking::SimpleAsyncHTTP->new(
         sub {
             my $http = shift;
-            my $data = eval { from_json($http->content()) };
-            if ($@) {
-                $log->error("SR API JSON error for $url: $@");
-                return $cb->({});
+            my $data = eval { decode_json($http->content()) };
+            if ($@ || ref $data ne 'HASH') {
+                my $err = $@ || 'non-object JSON response';
+                $log->error("SR API JSON error for $url: $err");
+                if ($retries > 0) {
+                    Slim::Utils::Timers::setTimer(undef, time() + 1, sub {
+                        $class->_get($path, $params, $cb, $retries - 1);
+                    });
+                    return;
+                }
+                return $cb->(undef);
             }
             $cb->($data);
         },
         sub {
             my ($http, $error) = @_;
             $log->error("SR API error for $url: $error");
-            $cb->({});
+            if ($retries > 0) {
+                Slim::Utils::Timers::setTimer(undef, time() + 1, sub {
+                    $class->_get($path, $params, $cb, $retries - 1);
+                });
+                return;
+            }
+            $cb->(undef);
         },
         { timeout => 15 }
     )->get($url);
 }
 
-# Fetch all pages, accumulating items under $list_key, then call $cb->(\@all)
+# Fetch all pages, accumulating items under $list_key, then call $cb->(\@all, $failed)
 sub _getAll {
-    my ($class, $path, $params, $list_key, $ttl, $cb) = @_;
+    my ($class, $path, $params, $list_key, $cb) = @_;
 
     my @all;
+    my $sep = $params ? '&' : '';
+    my $base = BASE_URL . $path . '?format=json' . $sep . $params;
 
     my $fetchPage;
     $fetchPage = sub {
-        my ($page) = @_;
-        my $sep      = $params ? '&' : '';
-        my $page_url = BASE_URL . $path . '?format=json' . $sep . $params . "&page=$page";
+        my ($page, $retries) = @_;
+        $retries = 1 unless defined $retries;
+        my $page_url = $base . "&page=$page";
 
         Slim::Networking::SimpleAsyncHTTP->new(
             sub {
                 my $http = shift;
-                my $data = eval { from_json($http->content()) };
-                if ($@ || !$data) {
-                    $log->error("SR API page $page error: $@");
-                    return $cb->(\@all);
+                my $data = eval { decode_json($http->content()) };
+                if ($@ || ref $data ne 'HASH') {
+                    my $err = $@ || 'non-object JSON response';
+                    $log->error("SR API page $page JSON error for $page_url: $err");
+                    if ($retries > 0) {
+                        Slim::Utils::Timers::setTimer(undef, time() + 1, sub {
+                            $fetchPage->($page, $retries - 1);
+                        });
+                        return;
+                    }
+                    return $cb->(\@all, 1);
                 }
 
                 push @all, @{ $data->{$list_key} || [] };
 
                 my $pagination = $data->{pagination} || {};
                 if ($pagination->{nextpage}) {
-                    $fetchPage->($pagination->{page} + 1);
+                    $fetchPage->(($pagination->{page} || $page) + 1, 1);
                 } else {
-                    $cb->(\@all);
+                    $cb->(\@all, 0);
                 }
             },
             sub {
                 my ($http, $error) = @_;
-                $log->error("SR API page $page error: $error");
-                $cb->(\@all);
+                $log->error("SR API page $page error for $page_url: $error");
+                if ($retries > 0) {
+                    Slim::Utils::Timers::setTimer(undef, time() + 1, sub {
+                        $fetchPage->($page, $retries - 1);
+                    });
+                    return;
+                }
+                $cb->(\@all, 1);
             },
             { timeout => 15 }
         )->get($page_url);
     };
 
-    $fetchPage->(1);
+    $fetchPage->(1, 1);
 }
 
 1;

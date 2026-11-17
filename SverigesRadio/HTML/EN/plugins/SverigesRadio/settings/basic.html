@@ -16,4 +16,8 @@
 		</select>
 	[% END %]
 
+	[% WRAPPER setting title="PLUGIN_SR_HTTP_STREAMS" desc="PLUGIN_SR_HTTP_STREAMS_DESC" %]
+		<input type="checkbox" name="pref_use_http_streams" value="1" [% IF prefs.pref_use_http_streams %]checked="checked"[% END %] />
+	[% END %]
+
 [% PROCESS settings/footer.html %]

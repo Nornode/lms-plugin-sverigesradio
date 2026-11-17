@@ -20,9 +20,21 @@ PLUGIN_SR_QUALITY_HI
 	EN	High quality
 	SV	Hög kvalitet
 
+PLUGIN_SR_QUALITY_NORMAL
+	EN	Normal quality
+	SV	Normal kvalitet
+
 PLUGIN_SR_QUALITY_LO
 	EN	Standard quality
 	SV	Standardkvalitet
+
+PLUGIN_SR_HTTP_STREAMS
+	EN	Plain HTTP for podcasts
+	SV	Okrypterad HTTP för poddar
+
+PLUGIN_SR_HTTP_STREAMS_DESC
+	EN	Use plain HTTP instead of HTTPS for podcast CDNs (faster playback start and compatible with older hardware players)
+	SV	Använd HTTP istället för HTTPS för poddar (snabbare uppspelningsstart och kompatibelt med äldre spelare)
 
 PLUGIN_SR_CHANNELS_FILTER
 	EN	Channel Filter
